@@ -1,21 +1,14 @@
-"""
-categories_tab.py
-------------------
-The Categories tab: add, view, update, and delete spending categories.
-
-If your professor asks about the Categories screen or how category
-CRUD works -- this is the file to open.
-"""
-
 import tkinter as tk
 from tkinter import ttk, messagebox
+from json import ObjectId
+from pymongo.errors import DuplicateKeyError
 
-from database import get_connection
+from database import get_db
 
 
 class CategoriesTab(ttk.Frame):
-    def __init__(self, parent):
-        super().__init__(parent)
+    def _init_(self, parent):
+        super()._init_(parent)
         self.selected_id = None
         self.build_form()
         self.build_table()
@@ -60,13 +53,10 @@ class CategoriesTab(ttk.Frame):
             messagebox.showerror("Missing Data", "Category name is required.")
             return
 
+        db = get_db()
         try:
-            conn = get_connection()
-            cur = conn.cursor()
-            cur.execute("INSERT INTO categories (name) VALUES (?)", (name,))
-            conn.commit()
-            conn.close()
-        except Exception:
+            db.categories.insert_one({"name": name})
+        except DuplicateKeyError:
             messagebox.showerror("Duplicate", "That category already exists.")
             return
 
@@ -82,21 +72,16 @@ class CategoriesTab(ttk.Frame):
         for row in self.tree.get_children():
             self.tree.delete(row)
 
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT category_id, name FROM categories ORDER BY name")
-        for row in cur.fetchall():
-            self.tree.insert("", "end", values=row)
-        conn.close()
+        db = get_db()
+        for doc in db.categories.find().sort("name", 1):
+            self.tree.insert("", "end", values=(str(doc["_id"]), doc["name"]))
 
     def get_all_categories(self):
-        """Used by transactions_tab.py to populate the category dropdown."""
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT category_id, name FROM categories ORDER BY name")
-        result = cur.fetchall()
-        conn.close()
-        return result
+        """Used by transactions_tab.py to populate the category dropdown.
+        Returns a list of (category_id_str, name) tuples -- category_id
+        is the string form of MongoDB's ObjectId."""
+        db = get_db()
+        return [(str(doc["_id"]), doc["name"]) for doc in db.categories.find().sort("name", 1)]
 
     # -----------------------------------------------------------------
     # UPDATE
@@ -112,11 +97,15 @@ class CategoriesTab(ttk.Frame):
             messagebox.showerror("Missing Data", "Category name is required.")
             return
 
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("UPDATE categories SET name=? WHERE category_id=?", (name, self.selected_id))
-        conn.commit()
-        conn.close()
+        db = get_db()
+        try:
+            db.categories.update_one(
+                {"_id": ObjectId(self.selected_id)},
+                {"$set": {"name": name}},
+            )
+        except DuplicateKeyError:
+            messagebox.showerror("Duplicate", "That category already exists.")
+            return
 
         messagebox.showinfo("Success", "Category updated successfully.")
         self.clear_form()
@@ -138,11 +127,8 @@ class CategoriesTab(ttk.Frame):
         if not confirm:
             return
 
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("DELETE FROM categories WHERE category_id=?", (self.selected_id,))
-        conn.commit()
-        conn.close()
+        db = get_db()
+        db.categories.delete_one({"_id": ObjectId(self.selected_id)})
 
         messagebox.showinfo("Success", "Category deleted successfully.")
         self.clear_form()

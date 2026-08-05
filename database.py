@@ -1,61 +1,49 @@
-"""
-database.py
------------
-Everything related to the database lives here.
 
-If your professor asks "how do you connect to the database" or
-"how are your tables structured" -- this is the file to open.
-"""
-
-import sqlite3
-
-DB_NAME = "expenses.db"
+   
+import certifi
+from pymongo import MongoClient
 
 
-def get_connection():
-    """
-    Opens a connection to the SQLite database file.
-    SQLite has no separate server -- this just opens (or creates)
-    a single file called expenses.db in the project folder.
-    """
-    return sqlite3.connect(DB_NAME)
+MONGO_URI = "mongodb://localhost:27017/expensetracker"
+
+DB_NAME = "expense_tracker"
+
+_client = None
+
+
+def get_db():
+    global _client
+
+    if _client is None:
+        _client = MongoClient(
+            MONGO_URI,
+            serverSelectionTimeoutMS=5000,
+            tls=True,
+            tlsCAFile=certifi.where()
+        )
+
+    return _client[DB_NAME]
 
 
 def init_db():
-    """
-    Creates the categories and transactions tables if they don't
-    already exist, and seeds a few default categories the first
-    time the app is ever run.
+    db = get_db()
 
-    Called once, when the application starts (see main.py).
-    """
-    conn = get_connection()
-    cur = conn.cursor()
+    categories = db["categories"]
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS categories (
-            category_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL UNIQUE
+    # Create unique index
+    categories.create_index("name", unique=True)
+
+    # Seed default categories
+    if categories.count_documents({}) == 0:
+        defaults = [
+            "Food",
+            "Travel",
+            "Rent",
+            "Shopping",
+            "Salary",
+            "Other"
+        ]
+
+        categories.insert_many(
+            [{"name": c} for c in defaults]
         )
-    """)
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS transactions (
-            txn_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            category_id INTEGER NOT NULL,
-            txn_type TEXT NOT NULL CHECK (txn_type IN ('Income', 'Expense')),
-            amount REAL NOT NULL,
-            txn_date TEXT NOT NULL,
-            note TEXT,
-            FOREIGN KEY (category_id) REFERENCES categories(category_id)
-        )
-    """)
-
-    # Seed a few common categories the first time the app runs
-    cur.execute("SELECT COUNT(*) FROM categories")
-    if cur.fetchone()[0] == 0:
-        defaults = ["Food", "Travel", "Rent", "Shopping", "Salary", "Other"]
-        cur.executemany("INSERT INTO categories (name) VALUES (?)", [(d,) for d in defaults])
-
-    conn.commit()
-    conn.close()

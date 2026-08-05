@@ -1,23 +1,14 @@
-"""
-transactions_tab.py
---------------------
-The Transactions tab: add, view, update, and delete income/expense
-entries. Each transaction links to a category from categories_tab.py.
-
-If your professor asks about the main data-entry screen, or how
-adding an expense actually gets saved -- this is the file to open.
-"""
-
 import tkinter as tk
 from tkinter import ttk, messagebox
 from datetime import date
+from bson import ObjectId
 
-from database import get_connection
+from database import get_db
 
 
 class TransactionsTab(ttk.Frame):
-    def __init__(self, parent, categories_tab):
-        super().__init__(parent)
+    def _init_(self, parent, categories_tab):
+        super()._init_(parent)
         self.categories_tab = categories_tab  # reference so we can read the category list
         self.selected_id = None
         self.build_form()
@@ -100,16 +91,16 @@ class TransactionsTab(ttk.Frame):
             messagebox.showerror("Invalid Data", "Amount must be a number.")
             return
 
-        category_id = self.category_map[category_name]
+        category_id = self.category_map[category_name]  # string form of ObjectId
 
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO transactions (category_id, txn_type, amount, txn_date, note) VALUES (?, ?, ?, ?, ?)",
-            (category_id, txn_type, amount_val, txn_date, note),
-        )
-        conn.commit()
-        conn.close()
+        db = get_db()
+        db.transactions.insert_one({
+            "category_id": category_id,
+            "txn_type": txn_type,
+            "amount": amount_val,
+            "txn_date": txn_date,
+            "note": note,
+        })
 
         messagebox.showinfo("Success", "Transaction added successfully.")
         self.clear_form()
@@ -123,17 +114,20 @@ class TransactionsTab(ttk.Frame):
         for row in self.tree.get_children():
             self.tree.delete(row)
 
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT t.txn_id, t.txn_type, c.name, t.amount, t.txn_date, t.note
-            FROM transactions t
-            JOIN categories c ON t.category_id = c.category_id
-            ORDER BY t.txn_date DESC
-        """)
-        for row in cur.fetchall():
-            self.tree.insert("", "end", values=row)
-        conn.close()
+        db = get_db()
+        # No JOIN in MongoDB -- build a lookup dict of category_id -> name
+        category_names = {str(c["_id"]): c["name"] for c in db.categories.find()}
+
+        for doc in db.transactions.find().sort("txn_date", -1):
+            cat_name = category_names.get(doc["category_id"], "Unknown")
+            self.tree.insert("", "end", values=(
+                str(doc["_id"]),
+                doc["txn_type"],
+                cat_name,
+                doc["amount"],
+                doc["txn_date"],
+                doc.get("note", ""),
+            ))
 
     # -----------------------------------------------------------------
     # UPDATE
@@ -161,14 +155,17 @@ class TransactionsTab(ttk.Frame):
 
         category_id = self.category_map[category_name]
 
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "UPDATE transactions SET category_id=?, txn_type=?, amount=?, txn_date=?, note=? WHERE txn_id=?",
-            (category_id, txn_type, amount_val, txn_date, note, self.selected_id),
+        db = get_db()
+        db.transactions.update_one(
+            {"_id": ObjectId(self.selected_id)},
+            {"$set": {
+                "category_id": category_id,
+                "txn_type": txn_type,
+                "amount": amount_val,
+                "txn_date": txn_date,
+                "note": note,
+            }},
         )
-        conn.commit()
-        conn.close()
 
         messagebox.showinfo("Success", "Transaction updated successfully.")
         self.clear_form()
@@ -187,11 +184,8 @@ class TransactionsTab(ttk.Frame):
         if not confirm:
             return
 
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("DELETE FROM transactions WHERE txn_id=?", (self.selected_id,))
-        conn.commit()
-        conn.close()
+        db = get_db()
+        db.transactions.delete_one({"_id": ObjectId(self.selected_id)})
 
         messagebox.showinfo("Success", "Transaction deleted successfully.")
         self.clear_form()

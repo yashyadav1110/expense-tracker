@@ -1,22 +1,11 @@
-"""
-summary_tab.py
----------------
-The Summary tab: a read-only dashboard showing total income, total
-expense, balance, and spend broken down by category.
-
-If your professor asks "where's the Read part of CRUD used for
-something more than a plain table" -- this file is the best example,
-since it runs SUM() and GROUP BY queries instead of a simple SELECT *.
-"""
-
 from tkinter import ttk
 
-from database import get_connection
+from database import get_db
 
 
 class SummaryTab(ttk.Frame):
-    def __init__(self, parent):
-        super().__init__(parent)
+    def _init_(self, parent):
+        super()._init_(parent)
         self.build_widgets()
 
     def build_widgets(self):
@@ -46,18 +35,24 @@ class SummaryTab(ttk.Frame):
 
     def refresh_summary(self):
         """
-        Pulls aggregate totals straight from the database using SQL's
-        own SUM() and GROUP BY, rather than fetching every row and
-        adding them up in Python -- the database does the heavy lifting.
+        Pulls aggregate totals using MongoDB's own aggregation pipeline
+        ($match + $group + $sum), rather than fetching every document
+        and adding them up in Python -- the database does the heavy
+        lifting, same idea as SQL's SUM()/GROUP BY.
         """
-        conn = get_connection()
-        cur = conn.cursor()
+        db = get_db()
 
-        cur.execute("SELECT COALESCE(SUM(amount),0) FROM transactions WHERE txn_type='Income'")
-        total_income = cur.fetchone()[0]
+        income_agg = list(db.transactions.aggregate([
+            {"$match": {"txn_type": "Income"}},
+            {"$group": {"_id": None, "total": {"$sum": "$amount"}}},
+        ]))
+        total_income = income_agg[0]["total"] if income_agg else 0
 
-        cur.execute("SELECT COALESCE(SUM(amount),0) FROM transactions WHERE txn_type='Expense'")
-        total_expense = cur.fetchone()[0]
+        expense_agg = list(db.transactions.aggregate([
+            {"$match": {"txn_type": "Expense"}},
+            {"$group": {"_id": None, "total": {"$sum": "$amount"}}},
+        ]))
+        total_expense = expense_agg[0]["total"] if expense_agg else 0
 
         self.income_label.config(text=f"Total Income: {total_income:.2f}")
         self.expense_label.config(text=f"Total Expense: {total_expense:.2f}")
@@ -66,14 +61,20 @@ class SummaryTab(ttk.Frame):
         for row in self.tree.get_children():
             self.tree.delete(row)
 
-        cur.execute("""
-            SELECT c.name, COALESCE(SUM(t.amount), 0) as total
-            FROM categories c
-            LEFT JOIN transactions t ON c.category_id = t.category_id AND t.txn_type = 'Expense'
-            GROUP BY c.category_id
-            ORDER BY total DESC
-        """)
-        for row in cur.fetchall():
-            self.tree.insert("", "end", values=(row[0], f"{row[1]:.2f}"))
+        # Expense totals grouped by category_id (MongoDB has no JOIN,
+        # so category names are attached afterward in Python)
+        category_totals = list(db.transactions.aggregate([
+            {"$match": {"txn_type": "Expense"}},
+            {"$group": {"_id": "$category_id", "total": {"$sum": "$amount"}}},
+        ]))
+        totals_by_cat_id = {row["_id"]: row["total"] for row in category_totals}
 
-        conn.close()
+        rows = []
+        for cat in db.categories.find():
+            cat_id = str(cat["_id"])
+            total = totals_by_cat_id.get(cat_id, 0)
+            rows.append((cat["name"], total))
+
+        rows.sort(key=lambda r: r[1], reverse=True)
+        for name, total in rows:
+            self.tree.insert("", "end", values=(name, f"{total:.2f}"))
