@@ -4,8 +4,8 @@ from database import get_db
 
 
 class SummaryTab(ttk.Frame):
-    def _init_(self, parent):
-        super()._init_(parent)
+    def __init__(self, parent):
+        super().__init__(parent)
         self.build_widgets()
 
     def build_widgets(self):
@@ -33,13 +33,7 @@ class SummaryTab(ttk.Frame):
 
         self.refresh_summary()
 
-    def refresh_summary(self):
-        """
-        Pulls aggregate totals using MongoDB's own aggregation pipeline
-        ($match + $group + $sum), rather than fetching every document
-        and adding them up in Python -- the database does the heavy
-        lifting, same idea as SQL's SUM()/GROUP BY.
-        """
+    def refresh_summary(self): 
         db = get_db()
 
         income_agg = list(db.transactions.aggregate([

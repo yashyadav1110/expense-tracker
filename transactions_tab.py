@@ -7,10 +7,12 @@ from database import get_db
 
 
 class TransactionsTab(ttk.Frame):
-    def _init_(self, parent, categories_tab):
-        super()._init_(parent)
-        self.categories_tab = categories_tab  # reference so we can read the category list
+    def __init__(self, parent, categories_tab):
+        super().__init__(parent)
+
+        self.categories_tab = categories_tab
         self.selected_id = None
+
         self.build_form()
         self.build_table()
         self.refresh_dropdown()

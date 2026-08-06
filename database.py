@@ -1,10 +1,8 @@
-
-   
 import certifi
 from pymongo import MongoClient
 
-
-MONGO_URI = "mongodb://localhost:27017/expensetracker"
+# MongoDB Atlas connection string
+MONGO_URI = "mongodb+srv://yashdy8900:yashyadav@cluster0.oevctw6.mongodb.net/?appName=Cluster0"
 
 DB_NAME = "expense_tracker"
 

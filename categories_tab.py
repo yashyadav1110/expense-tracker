@@ -1,15 +1,16 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
-from json import ObjectId
+from bson import ObjectId
 from pymongo.errors import DuplicateKeyError
-
 from database import get_db
 
 
 class CategoriesTab(ttk.Frame):
-    def _init_(self, parent):
-        super()._init_(parent)
+    def __init__(self, parent):
+        super().__init__(parent)
+
         self.selected_id = None
+
         self.build_form()
         self.build_table()
         self.refresh_table()
@@ -77,9 +78,7 @@ class CategoriesTab(ttk.Frame):
             self.tree.insert("", "end", values=(str(doc["_id"]), doc["name"]))
 
     def get_all_categories(self):
-        """Used by transactions_tab.py to populate the category dropdown.
-        Returns a list of (category_id_str, name) tuples -- category_id
-        is the string form of MongoDB's ObjectId."""
+        
         db = get_db()
         return [(str(doc["_id"]), doc["name"]) for doc in db.categories.find().sort("name", 1)]
 
